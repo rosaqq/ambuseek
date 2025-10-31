@@ -9,16 +9,45 @@
     <style>
         body { font-family: system-ui, sans-serif; margin: 2rem; }
         #network { width: 60%; height: 600px; border: 1px solid #ccc; margin: 1rem 0.2rem; }
-        .inputs { margin-bottom: 1rem; }
+        .inputs {
+            margin-bottom: 1rem;
+            display: flex;
+            justify-content: flex-start;
+        }
+        .controls {
+            display: flex;
+            gap: 1rem;
+        }
+        .controls h4 {
+            margin: 0;
+        }
+        #findPathSel {
+            display: flex;
+            gap: 2px;
+            flex-direction: column;
+            align-items: flex-end;
+        }
+        #findPathSel select {
+            width: 10rem;
+        }
     </style>
 </head>
 <body>
 <h1>Graph Visualizer + A* Pathfinder</h1>
 
 <div class="inputs">
-    <label>Nodes CSV (pontos.csv): <input type="file" id="nodesFile" accept=".csv"></label><br><br>
-    <label>Edges CSV (ruas.csv): <input type="file" id="edgesFile" accept=".csv"></label><br><br>
-    <label>Info CSV (optional): <input type="file" id="infoFile" accept=".csv"></label><br><br>
+    <label>
+        Nodes CSV<br>
+        <input type="file" id="nodesFile" accept=".csv">
+    </label>
+    <label>
+        Edges CSV <br>
+        <input type="file" id="edgesFile" accept=".csv">
+    </label>
+    <label>
+        Info CSV<br>
+        <input type="file" id="infoFile" accept=".csv">
+    </label>
     <button id="loadBtn">Load Graph</button>
 </div>
 
@@ -27,14 +56,12 @@
     <pre id="status" style="margin:1rem 0.2rem; font-weight:bold; white-space: pre-wrap; background:#f8f8f8; padding:0.5rem; flex:1; overflow-y:auto;"></pre>
 </div>
 
-<div class="inputs">
-    <h3>Find the shortest path</h3>
-    <label>Start node:
-        <select id="startNode"></select>
-    </label>
-    <label>Goal node:
-        <select id="goalNode"></select>
-    </label>
+<div class="controls">
+    <div id="findPathSel">
+        <h4>Tool: find best path</h4>
+        <label>Start: <select id="startNode"></select></label>
+        <label>Goal: <select id="goalNode"></select></label>
+    </div>
 
     <button id="findPathBtn">Find Path</button>
     <button id="resetColorsBtn">Reset Colors</button>
@@ -92,7 +119,7 @@
         // You store totalTime globally
         window.totalTimeAvailable = totalTime;
 
-        if (startPosition) {
+        if (startPosition !== null) {
             const startSelect = document.getElementById('startNode');
             startSelect.value = startPosition;
 
@@ -410,7 +437,7 @@
         const goalVal = document.getElementById('goalNode').value;
 
         // validate that user selected both (placeholder has empty string "")
-        if (!startVal || !goalVal) return alert("Enter both node IDs (select start and goal from the dropdowns)!");
+        if (!startVal || !goalVal) return alert("You must select start and goal from the dropdowns!");
 
         const start = parseInt(startVal, 10);
         const goal = parseInt(goalVal, 10);
