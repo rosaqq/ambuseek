@@ -36,10 +36,12 @@
     <button id="findPathBtn">Find Path</button>
     <button id="resetColorsBtn">Reset Colors</button>
     <button id="simulateBtn">Run Simulation</button>
+    <div id="status" style="margin-top:1rem; font-weight:bold;"></div>
 </div>
 
 <script>
     let nodes = [], edges = [], network;
+    let ambulanceNodeId = "ambulance";
     const container = document.getElementById('network');
 
     document.getElementById('loadBtn').addEventListener('click', async () => {
@@ -94,7 +96,7 @@
 
             // highlight in green
             const nodeSet = network.body.data.nodes;
-            nodeSet.update({ id: startPosition, color: { background: 'lightgreen' } });
+            nodeSet.update({ id: startPosition, color: { background: 'lightgreen', border: 'lightgreen'}, borderWidth: 2 });
         }
 
     });
@@ -113,7 +115,13 @@
     }
 
     function drawGraph() {
-        const data = { nodes: new vis.DataSet(nodes), edges: new vis.DataSet(edges) };
+        const data = {
+            nodes: new vis.DataSet([
+                ...nodes,
+                { id: ambulanceNodeId, label: "🚑", shape: "text", font: { size: 40 }, hidden: true, physics: false}
+            ]),
+            edges: new vis.DataSet(edges)
+        };
 
         const options = {
             edges: { smooth: true },
@@ -244,110 +252,154 @@
     async function simulateAmbulance(startId, totalTime) {
         const patients = nodes.filter(n => n.type.toLowerCase() === "paciente");
         const hospitals = nodes.filter(n => n.type.toLowerCase() === "hospital");
+        const nodeSet = network.body.data.nodes;
+        const edgeSet = network.body.data.edges;
+        const statusDiv = document.getElementById("status");
+
+        // Initialize ambulance in starting pos
+        const startPos = network.getPositions([startId])[startId];
+        if (startPos) {
+            nodeSet.update({ id: ambulanceNodeId, hidden: false });
+            network.moveNode(ambulanceNodeId, startPos.x, startPos.y);
+        }
+
         let current = startId;
         let timeLeft = totalTime;
         let totalScore = 0;
         const visited = new Set();
         const pathTaken = [];
 
+        statusDiv.innerText = `🚑 Simulation running... Time left: ${timeLeft.toFixed(1)} min`;
+
         while (timeLeft > 0 && patients.some(p => !visited.has(p.id))) {
-            let bestPatient = null;
-            let bestPathToPatient = null;
-            let bestPathToHospital = null;
-            let bestTotalCost = Infinity;
-            let bestRatio = 0;
+            // Choose next best patient by score/time ratio
+            let best = chooseBestPatient(current, timeLeft, patients, hospitals, visited);
+            if (!best) break;
 
-            for (const p of patients.filter(p => !visited.has(p.id))) {
-                const pathToPatient = aStar(current, p.id);
-                if (!pathToPatient) continue;
-                const costToPatient = pathCost(pathToPatient);
-
-                // nearest hospital from this patient
-                let nearestHospital = null;
-                let pathToHospital = null;
-                let costToHospital = Infinity;
-                for (const h of hospitals) {
-                    const ph = aStar(p.id, h.id);
-                    if (!ph) continue;
-                    const ch = pathCost(ph);
-                    if (ch < costToHospital) {
-                        costToHospital = ch;
-                        pathToHospital = ph;
-                        nearestHospital = h;
-                    }
-                }
-                if (!pathToHospital) continue;
-
-                const totalCost = costToPatient + parseFloat(p.cost) + costToHospital;
-                const ratio = parseFloat(p.score) / totalCost;
-
-                if (totalCost <= timeLeft && ratio > bestRatio) {
-                    bestRatio = ratio;
-                    bestPatient = p;
-                    bestPathToPatient = pathToPatient;
-                    bestPathToHospital = pathToHospital;
-                    bestTotalCost = totalCost;
-                }
-            }
-
-            if (!bestPatient) break; // no reachable patient
+            const { patient, pathToPatient, pathToHospital, totalCost } = best;
 
             // Move to patient
-            pathTaken.push(...bestPathToPatient.slice(1));
-            timeLeft -= pathCost(bestPathToPatient);
+            await animatePath(pathToPatient, nodeSet, edgeSet, statusDiv, timeLeft);
+            timeLeft -= pathCost(pathToPatient);
 
             // Treat patient
-            timeLeft -= parseFloat(bestPatient.cost);
-            totalScore += parseFloat(bestPatient.score);
-            visited.add(bestPatient.id);
+            const careTime = parseFloat(patient.cost);
+            timeLeft -= careTime;
+            totalScore += parseFloat(patient.score);
+            visited.add(patient.id);
+            statusDiv.innerText = `🧍‍♂️ Treating patient ${patient.label} (${careTime} min)... Time left: ${timeLeft.toFixed(1)} min`;
+            await wait(500); // short pause for effect
 
             // Move to nearest hospital
-            pathTaken.push(...bestPathToHospital.slice(1));
-            timeLeft -= pathCost(bestPathToHospital);
-
-            current = bestPathToHospital[bestPathToHospital.length - 1];
-
-            // highlight route
-            const nodeSet = network.body.data.nodes;
-            nodeSet.update({ id: bestPatient.id, color: { background: '#ffcc00' } }); // yellow
-            nodeSet.update({ id: current, color: { background: '#00ccff' } }); // blue hospital
+            await animatePath(pathToHospital, nodeSet, edgeSet, statusDiv, timeLeft);
+            timeLeft -= pathCost(pathToHospital);
+            current = pathToHospital[pathToHospital.length - 1];
         }
 
-        highlightPath(pathTaken);
-
-        alert(`Simulation finished. \nTotal score collected: ${totalScore.toFixed(1)} \nTime left: ${timeLeft.toFixed(1)} minutes`);
+        statusDiv.innerText = `✅ Finished! Total score: ${totalScore.toFixed(1)} | Time left: ${timeLeft.toFixed(1)} min`;
+        alert(`Simulation finished!\nScore: ${totalScore.toFixed(1)}\nTime left: ${timeLeft.toFixed(1)} min`);
     }
 
-    // --- Helpers ---
+    // --- helper to choose best patient by score/time ratio ---
+    function chooseBestPatient(current, timeLeft, patients, hospitals, visited) {
+        let best = null;
+        let bestRatio = 0;
+
+        for (const p of patients.filter(p => !visited.has(p.id))) {
+            const pathToPatient = aStar(current, p.id);
+            if (!pathToPatient) continue;
+            const costToPatient = pathCost(pathToPatient);
+
+            let nearestHospital = null;
+            let pathToHospital = null;
+            let costToHospital = Infinity;
+            for (const h of hospitals) {
+                const ph = aStar(p.id, h.id);
+                if (!ph) continue;
+                const ch = pathCost(ph);
+                if (ch < costToHospital) {
+                    costToHospital = ch;
+                    pathToHospital = ph;
+                    nearestHospital = h;
+                }
+            }
+            if (!pathToHospital) continue;
+
+            const totalCost = costToPatient + parseFloat(p.cost) + costToHospital;
+            const ratio = parseFloat(p.score) / totalCost;
+
+            if (totalCost <= timeLeft && ratio > bestRatio) {
+                bestRatio = ratio;
+                best = { patient: p, pathToPatient, pathToHospital, totalCost };
+            }
+        }
+        return best;
+    }
+
+    // --- helpers ---
+    function getEdgeWeight(from, to) {
+        const e = edges.find(e =>
+            (e.from === from && e.to === to) ||
+            (e.to === from && e.from === to)
+        );
+        return e ? e.value : 0;
+    }
+
     function pathCost(path) {
         let total = 0;
         for (let i = 0; i < path.length - 1; i++) {
-            const e = edges.find(e =>
-                (e.from === path[i] && e.to === path[i + 1]) ||
-                (e.to === path[i] && e.from === path[i + 1])
-            );
-            if (e) total += e.value;
+            total += getEdgeWeight(path[i], path[i + 1]);
         }
         return total;
     }
 
-    function highlightPath(path) {
-        const edgeSet = network.body.data.edges;
-        const allEdges = edgeSet.get();
+    function highlightEdge(edgeSet, from, to, color) {
+        const e = edges.find(e =>
+            (e.from === from && e.to === to) ||
+            (e.to === from && e.from === to)
+        );
+        if (e) edgeSet.update({ id: e.id, color: { color }, width: 3 });
+    }
 
-        allEdges.forEach(edge => {
-            const match = path.some((a, i) =>
-                i < path.length - 1 &&
-                ((edge.from === path[i] && edge.to === path[i + 1]) ||
-                    (edge.to === path[i] && edge.from === path[i + 1]))
-            );
+    function highlightNode(nodeSet, id, color) {
+        nodeSet.update({ id, color: { background: color } });
+    }
 
-            edgeSet.update({
-                id: edge.id,
-                color: { color: match ? 'red' : '#848484' },
-                width: match ? 3 : 1
-            });
-        });
+    function wait(ms) {
+        return new Promise(res => setTimeout(res, ms));
+    }
+
+    // --- animation along path ---
+    async function animatePath(path, nodeSet, edgeSet, statusDiv, timeLeft) {
+
+        if (!path || path.length < 2) return;
+        const positions = network.getPositions(path);
+        nodeSet.update({ id: ambulanceNodeId, hidden: false }); // make visible
+
+        for (let i = 0; i < path.length - 1; i++) {
+            const from = path[i];
+            const to = path[i + 1];
+
+            const startPos = positions[from];
+            const endPos = positions[to];
+            if (!startPos || !endPos) continue;
+
+            const steps = 30; // smoothness
+            const delay = 20; // speed (ms per frame)
+
+            highlightEdge(edgeSet, from, to, "red");
+            highlightNode(nodeSet, to, nodeSet.get(to).type === "hospital" ? "#00ccff" : "orange");
+
+            for (let step = 0; step <= steps; step++) {
+                const x = startPos.x + (endPos.x - startPos.x) * (step / steps);
+                const y = startPos.y + (endPos.y - startPos.y) * (step / steps);
+                network.moveNode(ambulanceNodeId, x, y);
+                await wait(delay);
+            }
+
+            timeLeft -= getEdgeWeight(from, to);
+            statusDiv.innerText = `🚑 Moving: ${from} → ${to} | Time left: ${timeLeft.toFixed(1)} min`;
+        }
     }
 
 
@@ -399,7 +451,8 @@
     document.getElementById('simulateBtn').addEventListener('click', () => {
         const time = window.totalTimeAvailable;
         const start = parseInt(document.getElementById('startNode').value);
-        if (!start || !time) return alert("Load info.csv first!");
+        if (!time) return alert("Load info.csv first!");
+
         simulateAmbulance(start, time);
     });
 
