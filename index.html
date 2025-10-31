@@ -33,6 +33,7 @@
     </label>
 
     <button id="findPathBtn">Find Path</button>
+    <button id="resetColorsBtn">Reset Colors</button>
 </div>
 
 <script>
@@ -61,7 +62,8 @@
         edges = edgeResults.data.map(r => ({
             from: parseInt(r.ponto_origem),
             to: parseInt(r.ponto_destino),
-            value: parseInt(r.tempo_transporte)
+            value: parseInt(r.tempo_transporte),
+            color: "#97C2FC" // default blue
         }));
 
         drawGraph();
@@ -90,15 +92,47 @@
         };
 
         network = new vis.Network(container, data, options);
+        network.setOptions({
+            edges: {
+                smooth: {
+                    type: "dynamic"
+                },
+            },
+            physics: {
+                enabled: true,
+                solver: "forceAtlas2Based",  // works great for connected graphs
+                forceAtlas2Based: {
+                    gravitationalConstant: -100,   // more negative = more repulsion
+                    centralGravity: 0.03,        // smaller = looser center pull
+                    springLength: 50,            // longer edges = more spread
+                    springConstant: 0.02          // smaller = looser springs
+                },
+                maxVelocity: 50,
+                stabilization: { iterations: 500 },
+            },
+            layout: {
+                improvedLayout: true
+            },
+            nodes: {
+                shape: "ellipse",
+                size: 15,
+                font: { size: 14 }
+            }
+        })
         console.log("Loaded", nodes.length, "nodes and", edges.length, "edges");
     }
 
-    // --- A* Algorithm ---
+    // --- fixed A* that uses the edge.weight/value consistently and validates inputs ---
     function aStar(startId, goalId) {
+        // ensure startId/goalId are numbers
+        startId = Number(startId);
+        goalId = Number(goalId);
+
         const adj = {};
         for (const e of edges) {
+            // use e.value (we populated it) as cost
             if (!adj[e.from]) adj[e.from] = [];
-            adj[e.from].push({ to: e.to, cost: e.value });
+            adj[e.from].push({ to: e.to, cost: Number(e.value) });
         }
 
         const openSet = new Set([startId]);
@@ -113,6 +147,7 @@
 
         while (openSet.size > 0) {
             let current = [...openSet].reduce((a, b) => fScore[a] < fScore[b] ? a : b);
+
             if (current === goalId) return reconstructPath(cameFrom, current);
 
             openSet.delete(current);
@@ -121,13 +156,14 @@
                 if (tentative < gScore[neighbor.to]) {
                     cameFrom[neighbor.to] = current;
                     gScore[neighbor.to] = tentative;
-                    fScore[neighbor.to] = tentative;
+                    fScore[neighbor.to] = tentative; // no heuristic for now
                     openSet.add(neighbor.to);
                 }
             }
         }
         return null;
     }
+
 
     function reconstructPath(cameFrom, current) {
         const path = [current];
@@ -138,63 +174,90 @@
         return path;
     }
 
+    // --- populate selects (call this after drawGraph()) ---
     function populateDropdowns() {
         const startSelect = document.getElementById('startNode');
         const goalSelect = document.getElementById('goalNode');
 
-        // Clear old options
         startSelect.innerHTML = '';
         goalSelect.innerHTML = '';
 
-        // Add a placeholder
+        // placeholder with EMPTY value intentionally - we'll validate that later
         const placeholderStart = document.createElement('option');
+        placeholderStart.value = "";
         placeholderStart.textContent = "Select start node...";
-        placeholderStart.disabled = true;
+        placeholderStart.disabled = false; // keep selectable so .value is "" until user chooses
         placeholderStart.selected = true;
         startSelect.appendChild(placeholderStart);
 
         const placeholderGoal = document.createElement('option');
+        placeholderGoal.value = "";
         placeholderGoal.textContent = "Select goal node...";
-        placeholderGoal.disabled = true;
+        placeholderGoal.disabled = false;
         placeholderGoal.selected = true;
         goalSelect.appendChild(placeholderGoal);
 
-        // Add one option per node
         nodes.forEach(n => {
             const opt1 = document.createElement('option');
-            opt1.value = n.id;
+            opt1.value = String(n.id);   // values are strings but contain numeric ids
             opt1.textContent = n.label;
             startSelect.appendChild(opt1);
 
             const opt2 = document.createElement('option');
-            opt2.value = n.id;
+            opt2.value = String(n.id);
             opt2.textContent = n.label;
             goalSelect.appendChild(opt2);
         });
     }
 
 
+
+    // --- updated click handler for "Find Path" (validates selections) ---
     document.getElementById('findPathBtn').addEventListener('click', () => {
+        const startVal = document.getElementById('startNode').value;
+        const goalVal = document.getElementById('goalNode').value;
 
-        const start = parseInt(document.getElementById('startNode').value);
-        const goal = parseInt(document.getElementById('goalNode').value);
+        // validate that user selected both (placeholder has empty string "")
+        if (!startVal || !goalVal) return alert("Enter both node IDs (select start and goal from the dropdowns)!");
 
-        if (!start || !goal) return alert("Enter both node IDs!");
+        const start = parseInt(startVal, 10);
+        const goal = parseInt(goalVal, 10);
+        if (Number.isNaN(start) || Number.isNaN(goal)) return alert("Invalid node selection.");
 
         const path = aStar(start, goal);
         if (!path) return alert("No path found.");
 
+        // highlight edges along the path
         const edgeSet = network.body.data.edges;
         edgeSet.forEach(edge => {
-            if (path.includes(edge.from) && path.includes(edge.to) &&
-                path.indexOf(edge.to) === path.indexOf(edge.from) + 1)
+            // convert from/to numbers to compare
+            const from = Number(edge.from);
+            const to = Number(edge.to);
+            if (path.includes(from) && path.includes(to) &&
+                path.indexOf(to) === path.indexOf(from) + 1) {
                 edgeSet.update({ id: edge.id, color: { color: 'red' }, width: 3 });
-            else
+            } else {
                 edgeSet.update({ id: edge.id, color: { color: '#848484' }, width: 1 });
+            }
         });
 
-        alert("Path found: " + path.join(" → "));
+        // alert("Path found: " + path.join(" → "));
     });
+
+    document.getElementById('resetColorsBtn').addEventListener('click', () => {
+        if (!network) return;
+
+        const edgeSet = network.body.data.edges;
+        edgeSet.forEach(edge => {
+            edgeSet.update({
+                id: edge.id,
+                color: { color: '#97C2FC' }, // default gray edge color
+                width: 1
+            });
+        });
+    });
+
+
 </script>
 </body>
 </html>
