@@ -35,6 +35,7 @@
 
     <button id="findPathBtn">Find Path</button>
     <button id="resetColorsBtn">Reset Colors</button>
+    <button id="simulateBtn">Run Simulation</button>
 </div>
 
 <script>
@@ -58,8 +59,8 @@
             id: parseInt(r.id),
             type: String(r.tipo),
             label: String(r.nome),
-            score: String(r.prioridade),
-            cost: String(r.tempo_cuidados_minimos),
+            score: parseInt(r.prioridade),
+            cost: parseFloat(r.tempo_cuidados_minimos),
             color: r.tipo && r.tipo.toLowerCase() === "hospital" ? "#ffc8c8" : "#97C2FC"
         }));
 
@@ -88,6 +89,8 @@
         window.totalTimeAvailable = totalTime;
 
         if (startPosition) {
+            const startSelect = document.getElementById('startNode');
+            startSelect.value = startPosition;
 
             // highlight in green
             const nodeSet = network.body.data.nodes;
@@ -149,7 +152,7 @@
         console.log("Loaded", nodes.length, "nodes and", edges.length, "edges");
     }
 
-    // --- fixed A* that uses the edge.weight/value consistently and validates inputs ---
+    // --- fixed A* that uses the edge.value consistently and validates inputs ---
     function aStar(startId, goalId) {
         // ensure startId/goalId are numbers
         startId = Number(startId);
@@ -237,6 +240,98 @@
         });
     }
 
+    // ambulance calculate function
+    async function simulateAmbulance(startId, totalTime) {
+        const patients = nodes.filter(n => n.type.toLowerCase() === "paciente");
+        const hospitals = nodes.filter(n => n.type.toLowerCase() === "hospital");
+        let current = startId;
+        let timeLeft = totalTime;
+        let totalScore = 0;
+        const visited = new Set();
+        const pathTaken = [];
+
+        while (timeLeft > 0 && patients.some(p => !visited.has(p.id))) {
+
+            // find nearest unvisited patient
+            const unvisitedPatients = patients.filter(p => !visited.has(p.id));
+            let bestPath = null;
+            let bestCost = Infinity;
+            let bestPatient = null;
+
+            for (const p of unvisitedPatients) {
+                const path = aStar(current, p.id);
+                if (!path) continue;
+                const cost = pathCost(path);
+                if (cost < bestCost) {
+                    bestCost = cost;
+                    bestPath = path;
+                    bestPatient = p;
+                }
+            }
+
+            if (!bestPath) break;
+
+            const totalToPatient = bestCost + parseFloat(bestPatient.cost);
+            if (totalToPatient > timeLeft) break; // not enough time
+
+            pathTaken.push(...bestPath.slice(1));
+            timeLeft -= totalToPatient;
+            visited.add(bestPatient.id);
+            totalScore += bestPatient.score;
+            current = bestPatient.id;
+
+            // go to nearest hospital
+            let nearestHospital = null;
+            let hospitalPath = null;
+            let hospitalCost = Infinity;
+
+            for (const h of hospitals) {
+                const path = aStar(current, h.id);
+                if (!path) continue;
+                const cost = pathCost(path);
+                if (cost < hospitalCost) {
+                    hospitalCost = cost;
+                    hospitalPath = path;
+                    nearestHospital = h;
+                }
+            }
+
+            if (!hospitalPath) break;
+            if (hospitalCost > timeLeft) break;
+
+            pathTaken.push(...hospitalPath.slice(1));
+            timeLeft -= hospitalCost;
+            current = nearestHospital.id;
+        }
+
+        highlightPath(pathTaken);
+        alert(`Simulation finished. Total score: ${totalScore.toFixed()} Time left: ${timeLeft.toFixed(1)} minutes`);
+    }
+
+    // Helper: compute path cost (sum of edge values)
+    function pathCost(path) {
+        let total = 0;
+        for (let i = 0; i < path.length - 1; i++) {
+            const e = edges.find(e =>
+                (e.from === path[i] && e.to === path[i + 1]) ||
+                (e.to === path[i] && e.from === path[i + 1])
+            );
+            if (e) total += e.value;
+        }
+        return total;
+    }
+
+    // Highlight path visually
+    function highlightPath(path) {
+        const edgeSet = network.body.data.edges;
+        edgeSet.forEach(edge => {
+            if (path.includes(edge.from) && path.includes(edge.to) &&
+                path.indexOf(edge.to) === path.indexOf(edge.from) + 1)
+                edgeSet.update({ id: edge.id, color: { color: 'red' }, width: 3 });
+            else
+                edgeSet.update({ id: edge.id, color: { color: '#848484' }, width: 1 });
+        });
+    }
 
 
     // --- updated click handler for "Find Path" (validates selections) ---
@@ -284,6 +379,12 @@
         });
     });
 
+    document.getElementById('simulateBtn').addEventListener('click', () => {
+        const time = window.totalTimeAvailable;
+        const start = parseInt(document.getElementById('startNode').value);
+        if (!start || !time) return alert("Load info.csv first!");
+        simulateAmbulance(start, time);
+    });
 
 </script>
 </body>
