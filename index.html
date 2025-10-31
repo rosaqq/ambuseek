@@ -18,6 +18,7 @@
 <div class="inputs">
     <label>Nodes CSV (pontos.csv): <input type="file" id="nodesFile" accept=".csv"></label><br><br>
     <label>Edges CSV (ruas.csv): <input type="file" id="edgesFile" accept=".csv"></label><br><br>
+    <label>Info CSV (optional): <input type="file" id="infoFile" accept=".csv"></label><br><br>
     <button id="loadBtn">Load Graph</button>
 </div>
 
@@ -43,22 +44,26 @@
     document.getElementById('loadBtn').addEventListener('click', async () => {
         const nodeFile = document.getElementById('nodesFile').files[0];
         const edgeFile = document.getElementById('edgesFile').files[0];
-        if (!nodeFile || !edgeFile) return alert("Select both CSV files!");
+        const infoFile = document.getElementById('infoFile').files[0];
+        if (!nodeFile || !edgeFile) return alert("Select both nodes and edges CSV files!");
 
-        const [nodeResults, edgeResults] = await Promise.all([
+        const [nodeResults, edgeResults, infoResults] = await Promise.all([
             parseCSV(nodeFile),
-            parseCSV(edgeFile)
+            parseCSV(edgeFile),
+            infoFile ? parseCSV(infoFile) : Promise.resolve({ data: [] })
         ]);
 
+        // --- Load nodes ---
         nodes = nodeResults.data.map(r => ({
             id: parseInt(r.id),
             type: String(r.tipo),
             label: String(r.nome),
             score: String(r.prioridade),
             cost: String(r.tempo_cuidados_minimos),
-            color: r.tipo === "hospital" ? "#ffc8c8" : "#97C2FC" // default blue for others
+            color: r.tipo && r.tipo.toLowerCase() === "hospital" ? "#ffc8c8" : "#97C2FC"
         }));
 
+        // --- Load edges ---
         edges = edgeResults.data.map(r => ({
             from: parseInt(r.ponto_origem),
             to: parseInt(r.ponto_destino),
@@ -66,9 +71,31 @@
             color: "#97C2FC" // default blue
         }));
 
+        // --- Load info CSV (optional) ---
+        let startPosition = null;
+        let totalTime = null;
+        if (infoResults.data.length > 0) {
+            const row = infoResults.data[0];
+            startPosition = parseInt(row.ponto_inicial);
+            totalTime = parseFloat(row.tempo_total);
+            console.log("Loaded info CSV:", { startPosition, totalTime });
+        }
+
         drawGraph();
         populateDropdowns();
+
+        // You store totalTime globally
+        window.totalTimeAvailable = totalTime;
+
+        if (startPosition) {
+
+            // highlight in green
+            const nodeSet = network.body.data.nodes;
+            nodeSet.update({ id: startPosition, color: { background: 'lightgreen' } });
+        }
+
     });
+
 
     function parseCSV(file) {
         return new Promise((resolve, reject) => {
