@@ -251,64 +251,74 @@
         const pathTaken = [];
 
         while (timeLeft > 0 && patients.some(p => !visited.has(p.id))) {
-
-            // find nearest unvisited patient
-            const unvisitedPatients = patients.filter(p => !visited.has(p.id));
-            let bestPath = null;
-            let bestCost = Infinity;
             let bestPatient = null;
+            let bestPathToPatient = null;
+            let bestPathToHospital = null;
+            let bestTotalCost = Infinity;
+            let bestRatio = 0;
 
-            for (const p of unvisitedPatients) {
-                const path = aStar(current, p.id);
-                if (!path) continue;
-                const cost = pathCost(path);
-                if (cost < bestCost) {
-                    bestCost = cost;
-                    bestPath = path;
+            for (const p of patients.filter(p => !visited.has(p.id))) {
+                const pathToPatient = aStar(current, p.id);
+                if (!pathToPatient) continue;
+                const costToPatient = pathCost(pathToPatient);
+
+                // nearest hospital from this patient
+                let nearestHospital = null;
+                let pathToHospital = null;
+                let costToHospital = Infinity;
+                for (const h of hospitals) {
+                    const ph = aStar(p.id, h.id);
+                    if (!ph) continue;
+                    const ch = pathCost(ph);
+                    if (ch < costToHospital) {
+                        costToHospital = ch;
+                        pathToHospital = ph;
+                        nearestHospital = h;
+                    }
+                }
+                if (!pathToHospital) continue;
+
+                const totalCost = costToPatient + parseFloat(p.cost) + costToHospital;
+                const ratio = parseFloat(p.score) / totalCost;
+
+                if (totalCost <= timeLeft && ratio > bestRatio) {
+                    bestRatio = ratio;
                     bestPatient = p;
+                    bestPathToPatient = pathToPatient;
+                    bestPathToHospital = pathToHospital;
+                    bestTotalCost = totalCost;
                 }
             }
 
-            if (!bestPath) break;
+            if (!bestPatient) break; // no reachable patient
 
-            const totalToPatient = bestCost + parseFloat(bestPatient.cost);
-            if (totalToPatient > timeLeft) break; // not enough time
+            // Move to patient
+            pathTaken.push(...bestPathToPatient.slice(1));
+            timeLeft -= pathCost(bestPathToPatient);
 
-            pathTaken.push(...bestPath.slice(1));
-            timeLeft -= totalToPatient;
+            // Treat patient
+            timeLeft -= parseFloat(bestPatient.cost);
+            totalScore += parseFloat(bestPatient.score);
             visited.add(bestPatient.id);
-            totalScore += bestPatient.score;
-            current = bestPatient.id;
 
-            // go to nearest hospital
-            let nearestHospital = null;
-            let hospitalPath = null;
-            let hospitalCost = Infinity;
+            // Move to nearest hospital
+            pathTaken.push(...bestPathToHospital.slice(1));
+            timeLeft -= pathCost(bestPathToHospital);
 
-            for (const h of hospitals) {
-                const path = aStar(current, h.id);
-                if (!path) continue;
-                const cost = pathCost(path);
-                if (cost < hospitalCost) {
-                    hospitalCost = cost;
-                    hospitalPath = path;
-                    nearestHospital = h;
-                }
-            }
+            current = bestPathToHospital[bestPathToHospital.length - 1];
 
-            if (!hospitalPath) break;
-            if (hospitalCost > timeLeft) break;
-
-            pathTaken.push(...hospitalPath.slice(1));
-            timeLeft -= hospitalCost;
-            current = nearestHospital.id;
+            // highlight route
+            const nodeSet = network.body.data.nodes;
+            nodeSet.update({ id: bestPatient.id, color: { background: '#ffcc00' } }); // yellow
+            nodeSet.update({ id: current, color: { background: '#00ccff' } }); // blue hospital
         }
 
         highlightPath(pathTaken);
-        alert(`Simulation finished. Total score: ${totalScore.toFixed()} Time left: ${timeLeft.toFixed(1)} minutes`);
+
+        alert(`Simulation finished. \nTotal score collected: ${totalScore.toFixed(1)} \nTime left: ${timeLeft.toFixed(1)} minutes`);
     }
 
-    // Helper: compute path cost (sum of edge values)
+    // --- Helpers ---
     function pathCost(path) {
         let total = 0;
         for (let i = 0; i < path.length - 1; i++) {
@@ -321,15 +331,22 @@
         return total;
     }
 
-    // Highlight path visually
     function highlightPath(path) {
         const edgeSet = network.body.data.edges;
-        edgeSet.forEach(edge => {
-            if (path.includes(edge.from) && path.includes(edge.to) &&
-                path.indexOf(edge.to) === path.indexOf(edge.from) + 1)
-                edgeSet.update({ id: edge.id, color: { color: 'red' }, width: 3 });
-            else
-                edgeSet.update({ id: edge.id, color: { color: '#848484' }, width: 1 });
+        const allEdges = edgeSet.get();
+
+        allEdges.forEach(edge => {
+            const match = path.some((a, i) =>
+                i < path.length - 1 &&
+                ((edge.from === path[i] && edge.to === path[i + 1]) ||
+                    (edge.to === path[i] && edge.from === path[i + 1]))
+            );
+
+            edgeSet.update({
+                id: edge.id,
+                color: { color: match ? 'red' : '#848484' },
+                width: match ? 3 : 1
+            });
         });
     }
 
