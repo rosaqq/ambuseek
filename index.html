@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Graph Visualizer + A* Pathfinder</title>
+    <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/vis-network@9.1.6/dist/vis-network.min.js"></script>
+    <link href="https://cdn.jsdelivr.net/npm/vis-network@9.1.6/styles/vis-network.min.css" rel="stylesheet">
+    <style>
+        body { font-family: system-ui, sans-serif; margin: 2rem; }
+        #network { width: 100%; height: 600px; border: 1px solid #ccc; margin-top: 1rem; }
+        .inputs { margin-bottom: 1rem; }
+    </style>
+</head>
+<body>
+<h1>Graph Visualizer + A* Pathfinder</h1>
+
+<div class="inputs">
+    <label>Nodes CSV (pontos.csv): <input type="file" id="nodesFile" accept=".csv"></label><br><br>
+    <label>Edges CSV (ruas.csv): <input type="file" id="edgesFile" accept=".csv"></label><br><br>
+    <button id="loadBtn">Load Graph</button>
+</div>
+
+<div id="network"></div>
+
+<div class="inputs">
+    <h3>Find the shortest path</h3>
+    <label>Start node:
+        <select id="startNode"></select>
+    </label>
+    <label>Goal node:
+        <select id="goalNode"></select>
+    </label>
+
+    <button id="findPathBtn">Find Path</button>
+</div>
+
+<script>
+    let nodes = [], edges = [], network;
+    const container = document.getElementById('network');
+
+    document.getElementById('loadBtn').addEventListener('click', async () => {
+        const nodeFile = document.getElementById('nodesFile').files[0];
+        const edgeFile = document.getElementById('edgesFile').files[0];
+        if (!nodeFile || !edgeFile) return alert("Select both CSV files!");
+
+        const [nodeResults, edgeResults] = await Promise.all([
+            parseCSV(nodeFile),
+            parseCSV(edgeFile)
+        ]);
+
+        nodes = nodeResults.data.map(r => ({
+            id: parseInt(r.id),
+            type: String(r.tipo),
+            label: String(r.nome),
+            score: String(r.prioridade),
+            cost: String(r.tempo_cuidados_minimos),
+            color: r.tipo === "hospital" ? "#ffc8c8" : "#97C2FC" // default blue for others
+        }));
+
+        edges = edgeResults.data.map(r => ({
+            from: parseInt(r.ponto_origem),
+            to: parseInt(r.ponto_destino),
+            value: parseInt(r.tempo_transporte)
+        }));
+
+        drawGraph();
+        populateDropdowns();
+    });
+
+    function parseCSV(file) {
+        return new Promise((resolve, reject) => {
+            Papa.parse(file, {
+                header: true,
+                dynamicTyping: false,
+                skipEmptyLines: true,
+                complete: resolve,
+                error: reject
+            });
+        });
+    }
+
+    function drawGraph() {
+        const data = { nodes: new vis.DataSet(nodes), edges: new vis.DataSet(edges) };
+
+        const options = {
+            edges: { smooth: true },
+            physics: { enabled: true, stabilization: { iterations: 200 } },
+            layout: { improvedLayout: true }
+        };
+
+        network = new vis.Network(container, data, options);
+        console.log("Loaded", nodes.length, "nodes and", edges.length, "edges");
+    }
+
+    // --- A* Algorithm ---
+    function aStar(startId, goalId) {
+        const adj = {};
+        for (const e of edges) {
+            if (!adj[e.from]) adj[e.from] = [];
+            adj[e.from].push({ to: e.to, cost: e.value });
+        }
+
+        const openSet = new Set([startId]);
+        const cameFrom = {};
+        const gScore = {}, fScore = {};
+        for (const n of nodes) {
+            gScore[n.id] = Infinity;
+            fScore[n.id] = Infinity;
+        }
+        gScore[startId] = 0;
+        fScore[startId] = 0;
+
+        while (openSet.size > 0) {
+            let current = [...openSet].reduce((a, b) => fScore[a] < fScore[b] ? a : b);
+            if (current === goalId) return reconstructPath(cameFrom, current);
+
+            openSet.delete(current);
+            for (const neighbor of adj[current] || []) {
+                const tentative = gScore[current] + neighbor.cost;
+                if (tentative < gScore[neighbor.to]) {
+                    cameFrom[neighbor.to] = current;
+                    gScore[neighbor.to] = tentative;
+                    fScore[neighbor.to] = tentative;
+                    openSet.add(neighbor.to);
+                }
+            }
+        }
+        return null;
+    }
+
+    function reconstructPath(cameFrom, current) {
+        const path = [current];
+        while (cameFrom[current] !== undefined) {
+            current = cameFrom[current];
+            path.unshift(current);
+        }
+        return path;
+    }
+
+    function populateDropdowns() {
+        const startSelect = document.getElementById('startNode');
+        const goalSelect = document.getElementById('goalNode');
+
+        // Clear old options
+        startSelect.innerHTML = '';
+        goalSelect.innerHTML = '';
+
+        // Add a placeholder
+        const placeholderStart = document.createElement('option');
+        placeholderStart.textContent = "Select start node...";
+        placeholderStart.disabled = true;
+        placeholderStart.selected = true;
+        startSelect.appendChild(placeholderStart);
+
+        const placeholderGoal = document.createElement('option');
+        placeholderGoal.textContent = "Select goal node...";
+        placeholderGoal.disabled = true;
+        placeholderGoal.selected = true;
+        goalSelect.appendChild(placeholderGoal);
+
+        // Add one option per node
+        nodes.forEach(n => {
+            const opt1 = document.createElement('option');
+            opt1.value = n.id;
+            opt1.textContent = n.label;
+            startSelect.appendChild(opt1);
+
+            const opt2 = document.createElement('option');
+            opt2.value = n.id;
+            opt2.textContent = n.label;
+            goalSelect.appendChild(opt2);
+        });
+    }
+
+
+    document.getElementById('findPathBtn').addEventListener('click', () => {
+
+        const start = parseInt(document.getElementById('startNode').value);
+        const goal = parseInt(document.getElementById('goalNode').value);
+
+        if (!start || !goal) return alert("Enter both node IDs!");
+
+        const path = aStar(start, goal);
+        if (!path) return alert("No path found.");
+
+        const edgeSet = network.body.data.edges;
+        edgeSet.forEach(edge => {
+            if (path.includes(edge.from) && path.includes(edge.to) &&
+                path.indexOf(edge.to) === path.indexOf(edge.from) + 1)
+                edgeSet.update({ id: edge.id, color: { color: 'red' }, width: 3 });
+            else
+                edgeSet.update({ id: edge.id, color: { color: '#848484' }, width: 1 });
+        });
+
+        alert("Path found: " + path.join(" → "));
+    });
+</script>
+</body>
+</html>
