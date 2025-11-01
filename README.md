@@ -16,3 +16,8 @@ And extra points for UI/UX with a visualizer for our ambulance.
 
 Note that current code is a patchwork of heavy ChatGPT snippets and has a lot of dumb in it.  
 But the general idea is there :)
+
+# Nerd notes
+1. At the moment no heuristic is implemented so A* is effectively behaving like Dijkstra
+2. I still haven't studied enought about the heuristics part to get there, explanations/suggestions welcome
+3. Let's ignore how the marginal improvement from heuristics is obliterated by basic code optimization fails at the moment
