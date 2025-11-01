@@ -196,10 +196,17 @@
         goalId = Number(goalId);
 
         const adj = {};
+
+        // This loop builds adjacency arrays
         for (const e of edges) {
-            // use e.value (we populated it) as cost
+
+            // Outbound direction
             if (!adj[e.from]) adj[e.from] = [];
             adj[e.from].push({ to: e.to, cost: Number(e.value) });
+
+            // Add reverse direction too (roads are bidirectional)
+            if (!adj[e.to]) adj[e.to] = [];
+            adj[e.to].push({ to: e.from, cost: Number(e.value) });
         }
 
         const openSet = new Set([startId]);
