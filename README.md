@@ -1,8 +1,11 @@
 # AmbuSeek™ playground
 (™ is a joke)
 
+Live at https://rosaqq.github.io/ambuseek/  
+(100% local - you need to get the datasets so you can load them from your machine)  
+
 This is a second take at the 2025 SciTech Hackathon challenge!  
-Got the motivation after playing with [this code](https://github.com/CokieMiner/SciTech/) by @CokieMiner and reading a bit about the [A* algorithm](https://en.wikipedia.org/wiki/A*_search_algorithm)  
+Got the motivation after playing with [this code by @CokieMiner](https://github.com/CokieMiner/SciTech/) and reading a bit about the [A* algorithm](https://en.wikipedia.org/wiki/A*_search_algorithm)  
 
 - Weighted graph of Hospitals and Patients.
 - Each patient had a score and an immediate care time.
