@@ -10,15 +10,15 @@ document.getElementById('loadBtn').addEventListener('click', async () => {
     // --- If no files provided, load defaults from the server ---
     const nodeCSV = nodeFile
         ? await parseCSV(nodeFile)
-        : await parseCSVFromURL('/datasets/hard/10/pontos.csv');
+        : await parseCSVFromURL('/ambuseek/datasets/hard/10/pontos.csv');
 
     const edgeCSV = edgeFile
         ? await parseCSV(edgeFile)
-        : await parseCSVFromURL('/datasets/hard/10/ruas.csv');
+        : await parseCSVFromURL('/ambuseek/datasets/hard/10/ruas.csv');
 
     const infoCSV = infoFile
         ? await parseCSV(infoFile)
-        : await parseCSVFromURL('/datasets/hard/10/dados_iniciais.csv');   // optional
+        : await parseCSVFromURL('/ambuseek/datasets/hard/10/dados_iniciais.csv');   // optional
 
     const [nodeResults, edgeResults, infoResults] = await Promise.all([
         nodeCSV, edgeCSV, infoCSV
