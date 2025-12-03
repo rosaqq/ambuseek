@@ -6,12 +6,22 @@ document.getElementById('loadBtn').addEventListener('click', async () => {
     const nodeFile = document.getElementById('nodesFile').files[0];
     const edgeFile = document.getElementById('edgesFile').files[0];
     const infoFile = document.getElementById('infoFile').files[0];
-    if (!nodeFile || !edgeFile) return alert("Select both nodes and edges CSV files!");
+
+    // --- If no files provided, load defaults from the server ---
+    const nodeCSV = nodeFile
+        ? await parseCSV(nodeFile)
+        : await parseCSVFromURL('/datasets/hard/10/pontos.csv');
+
+    const edgeCSV = edgeFile
+        ? await parseCSV(edgeFile)
+        : await parseCSVFromURL('/datasets/hard/10/ruas.csv');
+
+    const infoCSV = infoFile
+        ? await parseCSV(infoFile)
+        : await parseCSVFromURL('/datasets/hard/10/dados_iniciais.csv');   // optional
 
     const [nodeResults, edgeResults, infoResults] = await Promise.all([
-        parseCSV(nodeFile),
-        parseCSV(edgeFile),
-        infoFile ? parseCSV(infoFile) : Promise.resolve({ data: [] })
+        nodeCSV, edgeCSV, infoCSV
     ]);
 
     // --- Load nodes ---
@@ -58,6 +68,16 @@ document.getElementById('loadBtn').addEventListener('click', async () => {
     }
 
 });
+
+async function parseCSVFromURL(url) {
+    const resp = await fetch(url);
+    const text = await resp.text();
+    return Papa.parse(text, {
+        header: true,
+        dynamicTyping: false,
+        skipEmptyLines: true
+    });
+}
 
 
 function parseCSV(file) {
